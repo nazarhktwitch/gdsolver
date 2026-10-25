@@ -1,20 +1,3 @@
-# The Windows package for Geometry Dash 2.209, built by scripts/ci-build-2209.ps1; Android is a manual run only (docs/ANDROID.md). Only the
-# Windows package is attached to a release, and only to a full one: the Android build is published by hand as a separate pre-release, and a
-# pre-release gets no Windows package (it would sit beside, or overwrite, the Android one).
-# The other platforms in Geode's example workflow cannot build this.
-#
-# Why the Windows job does not use geode-sdk/build-geode-mod: the mod is made for a 2.209 executable. That needs the bindings of a fork of
-# geode-sdk/bindings that carries bindings/2.209 (repository variables GDSOLVER_BINDINGS_REPO and GDSOLVER_BINDINGS_REF name the fork and the
-# ref to build against) and the Geode SDK with the header changes in tools/geode-sdk-2209.patch. The script clones the SDK at the pinned
-# commit, applies the patch, installs the SDK's binaries, clones the fork and builds with what build-geode-mod passes on Windows (Ninja,
-# clang, Release, LTO). The same script runs on a desk (see its header), so the job is nothing a person cannot reproduce.
-#
-# The point of building here rather than locally is that the binary attached to a release can be
-# traced to a commit of the public tree. The pitfalls page asks for it for that reason ("makes it
-# easier for us to verify that a mod has not been tampered with").
-#
-# This can only prove the mod compiles. The behaviour bar -- py/quick_regress.py and the cold
-# regression -- needs Geometry Dash itself, so it stays a local step.
 name: Build
 
 on:
@@ -22,17 +5,16 @@ on:
   push:
     branches: ["**"]
   pull_request:
-  # Not on tag push: the release does not exist yet at that point and the upload below would have
-  # nowhere to go. Publishing the release is the event that wants a binary.
   release:
     types: [published]
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   windows:
-    name: Windows (GD 2.209)
+    name: Windows (GD 2.2091)
     runs-on: windows-latest
 
     steps:
@@ -41,70 +23,73 @@ jobs:
       - name: Install the Geode CLI
         uses: geode-sdk/cli/.github/actions/setup@main
 
-      # The CLI wants a profile before it installs SDK binaries; a file standing in for the game is enough (what build-geode-mod does).
-      - name: Set up a Geode profile
+      - name: Set up Geode profile
         shell: pwsh
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'gd'
           New-Item -ItemType Directory -Force $dir | Out-Null
-          New-Item -ItemType File -Force (Join-Path $dir 'GeometryDash.exe') | Out-Null
-          geode profile add --name GithubActions (Join-Path $dir 'GeometryDash.exe') win
+          New-Item -ItemType File -Force `
+            (Join-Path $dir 'GeometryDash.exe') | Out-Null
+          geode profile add --name GithubActions `
+            (Join-Path $dir 'GeometryDash.exe') win
 
       - name: Install Ninja
         run: python -m pip install ninja
 
-      # The Codegen is built from the bindings' own source (the prebuilt one the bindings' CMake downloads is a rolling release that has moved on to
-      # a newer bindings layout than the one pinned here), which takes about half a minute on a desk; the built Codegen.exe is cached under a key that names the
-      # bindings commit, the OS and the compiler, and the script restores it only when its codegen.id says the same. The commit is looked up here
-      # because the key has to be known before the script clones anything. Not yet exercised on GitHub (that needs a push): the first release run after
-      # this change is the check, and the script's log says "Codegen restored from the cache" or "Codegen built from the bindings source".
-      - name: Look up the bindings commit
+      - name: Look up bindings commit
         id: bindings
         shell: pwsh
         env:
           REPO: ${{ vars.GDSOLVER_BINDINGS_REPO }}
           REF: ${{ vars.GDSOLVER_BINDINGS_REF }}
         run: |
-          if ($env:REF -match '^[0-9a-f]{40}$') { $sha = $env:REF }
-          else {
-            $sha = (git ls-remote $env:REPO "refs/heads/$env:REF" "refs/tags/$env:REF" "refs/tags/$env:REF^{}" | Select-Object -Last 1) -replace '\s.*$', ''
+          if (-not $env:REPO -or -not $env:REF) {
+            throw "Set GDSOLVER_BINDINGS_REPO and GDSOLVER_BINDINGS_REF."
           }
-          if (-not $sha) { throw "the bindings fork has no ref $env:REF" }
+
+          if ($env:REF -match '^[0-9a-f]{40}$') {
+            $sha = $env:REF
+          } else {
+            $sha = (git ls-remote $env:REPO `
+              "refs/heads/$env:REF" `
+              "refs/tags/$env:REF" `
+              "refs/tags/$env:REF^{}" |
+              Select-Object -Last 1) -replace '\s.*$', ''
+          }
+
+          if (-not $sha) {
+            throw "Could not resolve bindings ref: $env:REF"
+          }
+
           "commit=$sha" >> $env:GITHUB_OUTPUT
 
-      - name: Restore the Codegen
+      - name: Restore Codegen cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/codegen-cache
-          key: codegen-${{ runner.os }}-clang-${{ steps.bindings.outputs.commit }}-v1
+          key: codegen-${{ runner.os }}-clang-${{ steps.bindings.outputs.commit }}-22091-v1
 
-      - name: Build the package
-        id: build
+      - name: Build Windows package
         shell: pwsh
         env:
           GDSOLVER_BINDINGS_REPO: ${{ vars.GDSOLVER_BINDINGS_REPO }}
           GDSOLVER_BINDINGS_REF: ${{ vars.GDSOLVER_BINDINGS_REF }}
-        run: ./scripts/ci-build-2209.ps1 -Work "$env:RUNNER_TEMP/ci-work" -Out "$env:GITHUB_WORKSPACE/output" -CodegenCache "$env:RUNNER_TEMP/codegen-cache"
+        run: |
+          ./scripts/ci-build-22091.ps1 `
+            -Work "$env:RUNNER_TEMP/ci-work" `
+            -Out "$env:GITHUB_WORKSPACE/output" `
+            -CodegenCache "$env:RUNNER_TEMP/codegen-cache"
 
-      - name: Upload the package
+      - name: Upload Windows package
         uses: actions/upload-artifact@v7
         with:
-          name: geode-package
-          path: output
+          name: windows-package
+          path: output/*.geode
+          if-no-files-found: error
+          retention-days: 1
 
-      # The file is named after the mod id, so it is matched rather than spelled out -- the id
-      # changed once already and took four hardcoded copies of the old name with it.
-      - name: Attach it to the release
-        if: github.event_name == 'release' && !github.event.release.prerelease
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" output/*.geode --clobber
-
-  # Manual only: Android is not part of the release (it is built for 2.2081, the version mod.json's gd.android names, and published by hand).
   android:
-    name: Android64 (experimental, manual)
+    name: Android64 (GD 2.2091, experimental)
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -112,36 +97,90 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The solver CLI (leveldp and its test drivers) is a desktop tool; only the mod is built.
-      - name: Build the mod
+      - name: Build Android package
         id: build
-        continue-on-error: true
         uses: geode-sdk/build-geode-mod@main
         with:
           target: Android64
-          bindings-ref: f050fd74ad531b0827377c97510cb807903ff1b3
-          configure-args: -DGDSOLVER_BUILD_DP=OFF -DCMAKE_CXX_FLAGS=-ferror-limit=0
+          bindings-ref: ${{ vars.GDSOLVER_ANDROID_BINDINGS_REF }}
+          configure-args: >-
+            -DGEODE_GD_VERSION=2.2091
+            -DGEODE_COMP_GD_VERSION=22091
+            -DGDSOLVER_BUILD_DP=OFF
+            -DCMAKE_CXX_FLAGS=-ferror-limit=0
 
-      # ninja stops at the first failing file. While the port is incomplete, go on through
-      # the same build directory, keep every error, and end the log with each distinct one
-      # once (most frequent first), so one run gives the whole list in its last lines.
-      - name: List every compile error
-        if: steps.build.outcome == 'failure'
-        shell: bash
-        run: |
-          set +e
-          cmake --build build -- -k 0 > build-errors.log 2>&1
-          status=$?
-          echo "=== distinct errors (count, place, message) ==="
-          grep -E "error:" build-errors.log | sed -E "s#${GITHUB_WORKSPACE}/##" \
-            | sort | uniq -c | sort -rn
-          echo "=== translation units that failed ==="
-          grep -E "^FAILED:" build-errors.log | sed -E 's#.* -c ##; s#'"${GITHUB_WORKSPACE}"'/##' | sort -u
-          exit $status
-
-      - name: Upload the package
+      - name: Upload Android package
         if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
-          name: geode-package-android64
+          name: android-package
           path: ${{ steps.build.outputs.build-output }}
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    name: Combine packages
+    needs: [windows, android]
+    if: >-
+      always() &&
+      needs.windows.result == 'success' &&
+      (needs.android.result == 'success' ||
+       needs.android.result == 'skipped' ||
+       needs.android.result == 'failure')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-package'
+          path: packages
+          merge-multiple: true
+
+      - name: Check packages
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(packages/*.geode)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No .geode packages found."
+            exit 1
+          fi
+
+          printf 'Found packages:\n'
+          printf ' - %s\n' "${files[@]}"
+
+      - name: Upload combined package
+        uses: actions/upload-artifact@v7
+        with:
+          name: geode-package
+          path: packages/*.geode
+          if-no-files-found: error
+
+      - name: Attach packages to full release
+        if: github.event_name == 'release' && !github.event.release.prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG" packages/*.geode --clobber
+
+      - name: Delete intermediate artifacts
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          for name in windows-package android-package; do
+            gh api "repos/$REPOSITORY/actions/artifacts?per_page=100" \
+              --jq ".artifacts[] | select(.name == \"$name\") | .id" |
+            while read -r id; do
+              [ -n "$id" ] || continue
+              gh api --method DELETE \
+                "repos/$REPOSITORY/actions/artifacts/$id" || true
+            done
+          done
+
