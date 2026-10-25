@@ -40,8 +40,8 @@ jobs:
         id: bindings
         shell: pwsh
         env:
-          REPO: ${{ vars.GDSOLVER_BINDINGS_REPO }}
-          REF: ${{ vars.GDSOLVER_BINDINGS_REF }}
+          REPO: ${{ vars.GDSOLVER_BINDINGS_REPO || 'https://github.com/gdsolver/geode-bindings' }}
+          REF: ${{ vars.GDSOLVER_BINDINGS_REF || '2.209b-on-upstream' }}
         run: |
           if (-not $env:REPO -or -not $env:REF) {
             throw "Set GDSOLVER_BINDINGS_REPO and GDSOLVER_BINDINGS_REF."
@@ -72,8 +72,8 @@ jobs:
       - name: Build Windows package
         shell: pwsh
         env:
-          GDSOLVER_BINDINGS_REPO: ${{ vars.GDSOLVER_BINDINGS_REPO }}
-          GDSOLVER_BINDINGS_REF: ${{ vars.GDSOLVER_BINDINGS_REF }}
+          GDSOLVER_BINDINGS_REPO: ${{ vars.GDSOLVER_BINDINGS_REPO || 'https://github.com/gdsolver/geode-bindings' }}
+          GDSOLVER_BINDINGS_REF: ${{ vars.GDSOLVER_BINDINGS_REF || '2.209b-on-upstream' }}
         run: |
           ./scripts/ci-build-2209.ps1 `
             -Work "$env:RUNNER_TEMP/ci-work" `
@@ -102,7 +102,7 @@ jobs:
         uses: geode-sdk/build-geode-mod@main
         with:
           target: Android64
-          bindings-ref: ${{ vars.GDSOLVER_ANDROID_BINDINGS_REF }}
+          bindings-ref: ${{ vars.GDSOLVER_ANDROID_BINDINGS_REF || '2.209b-on-upstream' }}
           configure-args: >-
             -DGEODE_GD_VERSION=2.2091
             -DGEODE_COMP_GD_VERSION=22091
