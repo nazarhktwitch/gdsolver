@@ -75,7 +75,7 @@ jobs:
           GDSOLVER_BINDINGS_REPO: ${{ vars.GDSOLVER_BINDINGS_REPO }}
           GDSOLVER_BINDINGS_REF: ${{ vars.GDSOLVER_BINDINGS_REF }}
         run: |
-          ./scripts/ci-build-22091.ps1 `
+          ./scripts/ci-build-2209.ps1 `
             -Work "$env:RUNNER_TEMP/ci-work" `
             -Out "$env:GITHUB_WORKSPACE/output" `
             -CodegenCache "$env:RUNNER_TEMP/codegen-cache"
