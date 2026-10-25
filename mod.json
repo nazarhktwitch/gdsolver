@@ -1,8 +1,8 @@
 {
-	"geode": "5.10.1",
+	"geode": "5.11.2",
 	"gd": {
-		"win": "2.209",
-		"android": "2.2081"
+		"win": "2.2091",
+		"android": "2.2091"
 	},
 	"id": "gdsolver.solver",
 	"name": "GD Solver",
