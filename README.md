@@ -1,5 +1,15 @@
 # gdsolver
 
+---
+
+
+NOT DEVELOPING THIS! FORKED TO FIX FOR FRIEND
+
+
+
+
+---
+
 **An automatic TAS solver for Geometry Dash** (2.209, Windows / Steam). It
 solves a level by playing it — inside the game, from cold.
 
